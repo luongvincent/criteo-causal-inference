@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 HF_PATH = "hf://datasets/criteo/criteo-uplift/criteo-research-uplift-v2.1.csv.gz"
 
@@ -28,3 +29,8 @@ def load_sample() -> pd.DataFrame:
     if not SAMPLE_PATH.exists():
         return build_sample()
     return pd.read_parquet(SAMPLE_PATH)
+
+
+def split_train_eval(df: pd.DataFrame, eval_size: float = 0.3, seed: int = 0):
+    """Split into train/eval, stratified by treatment so both keep the ~85/15 ratio."""
+    return train_test_split(df, test_size=eval_size, stratify=df["treatment"], random_state=seed)
