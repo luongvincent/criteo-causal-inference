@@ -44,7 +44,7 @@ def compute_ate(df, outcome: str, treatment_col: str = "treatment", alpha: float
         se=se,
         ci_low=ci_low,
         ci_high=ci_high,
-        relative_lift=ate / p0,
+        relative_lift=ate / p0 if p0 > 0 else np.nan,
     )
 
 
