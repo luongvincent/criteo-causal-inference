@@ -5,3 +5,4 @@ pyarrow
 scipy
 scikit-learn
 econml
+matplotlib
