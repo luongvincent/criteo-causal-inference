@@ -16,6 +16,22 @@ def load_full() -> pd.DataFrame:
     return pd.read_csv(HF_PATH)
 
 
+FULL_PATH = DATA_DIR / "raw" / "criteo_full.parquet"
+_FULL_DTYPES = {**{f"f{i}": "float32" for i in range(12)},
+                "treatment": "int8", "conversion": "int8", "visit": "int8", "exposure": "int8"}
+
+
+def load_full_cached() -> pd.DataFrame:
+    """Load the full dataset from a local parquet cache, downloading it once first.
+
+    Features are stored as float32 and flags as int8 to keep the ~14M rows well under 1 GB.
+    """
+    if not FULL_PATH.exists():
+        FULL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        pd.read_csv(HF_PATH, dtype=_FULL_DTYPES).to_parquet(FULL_PATH, index=False)
+    return pd.read_parquet(FULL_PATH)
+
+
 def build_sample(n: int = 1_000_000, seed: int = 0) -> pd.DataFrame:
     """Sample n rows from the full dataset and cache to disk as parquet."""
     df = load_full().sample(n=n, random_state=seed).reset_index(drop=True)

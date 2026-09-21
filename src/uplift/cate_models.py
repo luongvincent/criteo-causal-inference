@@ -1,13 +1,34 @@
 """Meta-learners for CATE estimation."""
 
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 
 from uplift.balance import FEATURES
 
+_E_CLIP = 0.01  # keep e(x) away from 0/1 so inverse-propensity weights stay bounded
+
 
 def _new_gbm(**kwargs) -> HistGradientBoostingClassifier:
     return HistGradientBoostingClassifier(random_state=0, **kwargs)
+
+
+# --- Propensity: P(treatment=1 | features) ---
+# Treatment was randomized, but notebook 07 finds a small, real dependence on the features
+# (AUC ~0.51 predicting assignment), so a constant propensity is not exactly right.
+
+def _fit_propensity(train: pd.DataFrame, features: list[str], treatment_col: str) -> HistGradientBoostingClassifier:
+    return _new_gbm().fit(train[features], train[treatment_col])
+
+
+def _crossfit_propensity(train: pd.DataFrame, features: list[str], treatment_col: str) -> np.ndarray:
+    """Out-of-fold e(x): 2 folds, each row scored by the model fit on the other half."""
+    fold = np.arange(len(train)) % 2
+    e = np.zeros(len(train))
+    for k in (0, 1):
+        model = _new_gbm().fit(train.loc[fold != k, features], train.loc[fold != k, treatment_col])
+        e[fold == k] = model.predict_proba(train.loc[fold == k, features])[:, 1]
+    return np.clip(e, _E_CLIP, 1 - _E_CLIP)
 
 
 # --- S-learner: one model, treatment as a feature ---
@@ -71,8 +92,9 @@ def fit_x_learner(train: pd.DataFrame, outcome: str, features: list[str] = FEATU
     tau1 = HistGradientBoostingRegressor(random_state=0).fit(treated[features], d1)
     tau0 = HistGradientBoostingRegressor(random_state=0).fit(control[features], d0)
 
-    # propensity is a constant here since treatment was unconditionally randomized (~0.85)
-    propensity = train[treatment_col].mean()
+    # propensity is estimated from the features, not assumed constant: notebook 07 shows
+    # assignment is not exactly independent of them (see _fit_propensity)
+    propensity = _fit_propensity(train, features, treatment_col)
 
     return {"tau1": tau1, "tau0": tau0, "propensity": propensity}
 
@@ -80,7 +102,7 @@ def fit_x_learner(train: pd.DataFrame, outcome: str, features: list[str] = FEATU
 def predict_x_learner(model: dict, df: pd.DataFrame, features: list[str] = FEATURES):
     tau1_pred = model["tau1"].predict(df[features])
     tau0_pred = model["tau0"].predict(df[features])
-    e = model["propensity"]
+    e = np.clip(model["propensity"].predict_proba(df[features])[:, 1], _E_CLIP, 1 - _E_CLIP)
     return e * tau0_pred + (1 - e) * tau1_pred
 
 
@@ -88,16 +110,21 @@ def predict_x_learner(model: dict, df: pd.DataFrame, features: list[str] = FEATU
 
 def fit_dr_learner(train: pd.DataFrame, outcome: str, features: list[str] = FEATURES,
                     treatment_col: str = "treatment", **gbm_kwargs) -> HistGradientBoostingRegressor:
-    model_treated, model_control = fit_t_learner(train, outcome, features, treatment_col, **gbm_kwargs)
-
     t = train[treatment_col].to_numpy()
     y = train[outcome].to_numpy()
 
-    mu1 = model_treated.predict_proba(train[features])[:, 1]
-    mu0 = model_control.predict_proba(train[features])[:, 1]
+    # cross-fit the outcome models: each row's mu1/mu0 come from T-learner models fit on the
+    # other half, so residuals (y - mu) aren't shrunk by the models having seen that row
+    fold = np.arange(len(train)) % 2
+    mu1 = np.zeros(len(train))
+    mu0 = np.zeros(len(train))
+    for k in (0, 1):
+        model_treated, model_control = fit_t_learner(train[fold != k], outcome, features, treatment_col, **gbm_kwargs)
+        mu1[fold == k] = model_treated.predict_proba(train.loc[fold == k, features])[:, 1]
+        mu0[fold == k] = model_control.predict_proba(train.loc[fold == k, features])[:, 1]
 
-    # propensity is a constant here since treatment was unconditionally randomized (~0.85)
-    e = train[treatment_col].mean()
+    # estimated propensity e(x), cross-fitted so each row's e comes from a model that never saw it
+    e = _crossfit_propensity(train, features, treatment_col)
 
     # doubly robust pseudo-outcome: outcome-model estimate + propensity-weighted residual correction
     phi = (mu1 - mu0) + (t / e) * (y - mu1) - ((1 - t) / (1 - e)) * (y - mu0)
