@@ -1,6 +1,6 @@
 # criteo-casual-inference
 
-Causal inference practice project on the [Criteo Uplift Prediction dataset](https://huggingface.co/datasets/criteo/criteo-uplift) (Diemert et al., AdKDD 2018) — a randomized ad-targeting experiment with ~14M users. Goal, method, and full results are written up in [`reports/analysis.md`](reports/analysis.md); the project prompt and working constraints are in [`claude.md`](claude.md).
+Causal inference practice project on the [Criteo Uplift Prediction dataset](https://huggingface.co/datasets/criteo/criteo-uplift) (Diemert et al., AdKDD 2018) — a randomized ad-targeting experiment with ~14M users. Goal, method, and full results are written up in [`reports/analysis.md`](reports/analysis.md);
 
 ## Notebooks
 
@@ -18,4 +18,4 @@ Developed on a 1M-row sample (`notebooks/01`-`06`), then rerun on the full ~14M-
 
 ## Code
 
-Shared logic lives in `src/uplift/` (balance checks, ATE/CUPED, meta-learners, ranking evaluation, policy curve), imported by every notebook via `sys.path.insert(0, "../src")`. Data loaders cache the 1M-row sample and the full dataset as parquet under `data/` (gitignored) after the first download from Hugging Face.
+Shared logic lives in `src/uplift/` (balance checks, ATE/CUPED, meta-learners, ranking evaluation, policy curve), imported by every notebook via `sys.path.insert(0, "../src")`.
