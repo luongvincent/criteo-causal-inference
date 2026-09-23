@@ -1,4 +1,4 @@
-# criteo-casual-inference
+# criteo-causal-inference
 
 Causal inference practice project on the [Criteo Uplift Prediction dataset](https://huggingface.co/datasets/criteo/criteo-uplift) (Diemert et al., AdKDD 2018) — a randomized ad-targeting experiment with ~14M users. Goal, method, and full results are written up in [`reports/analysis.md`](reports/analysis.md);
 
