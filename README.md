@@ -2,10 +2,6 @@
 
 Causal inference practice project on the [Criteo Uplift Prediction dataset](https://huggingface.co/datasets/criteo/criteo-uplift) (Diemert et al., AdKDD 2018) — a randomized ad-targeting experiment with ~14M users. Goal, method, and full results are written up in [`reports/analysis.md`](reports/analysis.md); the project prompt and working constraints are in [`claude.md`](claude.md).
 
-## Do not commit or push
-
-This repo is local only. Do not `git commit` or `git push` any changes to GitHub.
-
 ## Notebooks
 
 Developed on a 1M-row sample (`notebooks/01`-`06`), then rerun on the full ~14M-row dataset (`notebooks/07`) for final numbers.
