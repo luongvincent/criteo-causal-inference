@@ -2,7 +2,7 @@
 
 Source: Criteo Uplift Prediction dataset (Diemert et al., AdKDD 2018), ~14M rows, one row per user. `treatment` (eligibility to be targeted) is randomized at ~85/15. `exposure` (whether an ad was actually shown) is not — it's the outcome of Criteo's real-time auction, which selects users it predicts are valuable. Outcomes: `visit` (~4.7% base rate) and `conversion` (~0.29% base rate). Twelve anonymized, randomly-projected features (`f0`-`f11`).
 
-Numbers below are from the full ~14M-row dataset (`notebooks/07_full_data_analysis.ipynb`), not the 1M-row development sample, except where a section says otherwise (the `exposure` comparison in Section 4 and the causal forest in Section 6 are from the 1M-row sample).
+Numbers below are from the full ~14M-row dataset (`notebooks/07_full_data_analysis.ipynb`), not the 1M-row development sample, except where a section says otherwise (the causal forest in Section 6 is from the 1M-row sample).
 
 ## 1. Question and identification
 
@@ -54,12 +54,16 @@ All 12 SMDs are small in absolute terms (largest ~0.05, well under the conventio
 
 A sample ratio mismatch (SRM) test is a different check and it passes cleanly: the observed split (11,882,655 treated / 2,096,937 control) is within 2 users of the intended 85/15 (chi-square p ≈ 0.999). SRM asks whether the assignment produced the right *counts*; the balance checks above ask whether it was independent of *who the users are*. This dataset passes the first and only mostly passes the second, so a clean SRM does not certify balance.
 
+![Standardized mean differences for the 12 features, all inside the conventional 0.1 threshold but far outside the band expected from sampling noise](figures/01_covariate_balance.png)
+
+*Figure 1. Every feature is inside the conventional 0.1 threshold (red dashes), but all are outside the narrow band expected from sampling noise alone under true randomization (green).*
+
 ### ATE and MDE
 
 | outcome | rate, treated | rate, control | ATE | 95% CI | relative lift | MDE (relative) |
 |---|---|---|---|---|---|---|
 | `visit` | 0.04854 | 0.03820 | 0.01034 | [0.01006, 0.01063] | 27.1% | ~1.1% |
-| `conversion` | 0.00309 | 0.00194 | 0.00115 | [0.00108, 0.00122] | 59.5% | ~5.0% |
+| `conversion` | 0.00309 | 0.00194 | 0.00115 | [0.00108, 0.00122] | 59.4% | ~5.0% |
 
 Both effects are unambiguous — many multiples of their own MDE, CIs nowhere near zero. The full data narrows the `conversion` CI about 4x relative to the 1M-row sample, because the ~2.1M-user control group (not the ~12M treated) is what bounds precision.
 
@@ -76,6 +80,10 @@ For `visit`, all three adjustments agree and land ~25-32% below the raw estimate
 
 CUPED normally reduces variance without moving the point estimate. Here it moved the estimate by ~23 raw standard errors for `visit`, which is the tell that it is acting as a second bias adjustment, not a clean variance-only tool: its "cannot introduce bias" guarantee assumes the covariates are independent of assignment, which the balance check showed is only approximately true. Its variance reduction (25% for `visit`, 11% for `conversion`) is real but secondary here. The honest statement for `visit` is a range: the ATE is somewhere between ~0.0070-0.0077 (adjusted) and ~0.0103 (raw), i.e. roughly a 18-27% relative lift, not a single clean number. Section 5 covers why this range can't be collapsed further with this data.
 
+![Raw and covariate-adjusted ATE estimates with 95% confidence intervals, for visit and conversion](figures/02_adjusted_ate.png)
+
+*Figure 2. For `visit`, all three adjusted estimates sit well below the raw one. For `conversion` they also sit below it, but the intervals overlap and the doubly-robust interval (a 4M-row subsample) is wide.*
+
 ### CATE and heterogeneity
 
 Heterogeneity is real but concentrated in the top decile of predicted CATE, not spread across the ranking:
@@ -85,7 +93,15 @@ Heterogeneity is real but concentrated in the top decile of predicted CATE, not 
 
 With ~559K users per decile at full scale, these are precise estimates — the flat middle is evidence of near-zero effect, not evidence obscured by noise.
 
+![Measured ATE by predicted-CATE decile for the DR-learner and X-learner, on visit and conversion](figures/03_decile_ate.png)
+
+*Figure 3. Measured treated-vs-control effect within each decile of predicted CATE (bars) with 99.5% confidence intervals (whiskers), on the 5.6M held-out users. The dashed line is the overall ATE. The top decile (orange) is far above it; the middle deciles are near zero.*
+
 Model comparison (single train/eval split; AUUC has no attached uncertainty, so read loosely): on `visit` all four models are within ~7% of each other on AUUC. On `conversion` the S-learner collapses (predicts only 3 distinct values — the shrinkage failure mode expected when treatment effect is small relative to what covariates explain for a rare outcome); DR- and X-learner are the best and effectively tied; T-learner is clearly weaker, consistent with the T-learner's core flaw — subtracting two independently-fit models lets the smaller control group's noise pass straight through unfiltered.
+
+![Qini curves for four CATE models on visit and conversion, against random targeting](figures/04_qini_curves.png)
+
+*Figure 4. Cumulative incremental outcomes when targeting users in order of predicted CATE. On `conversion` the S-learner tracks the random-targeting line (it predicts a constant for most users); the DR- and X-learner curves are highest, and the T-learner is lower and jumps at the very end of its ranking.*
 
 **Sleeping dogs**: no decile, in any model, on either outcome, has a CI entirely below zero. There's no evidence ads hurt an identifiable segment of users. This is a statement about deciles, not individuals — a small harmed subgroup could be averaged away inside a decile — and the anonymized features mean even a real one couldn't be described.
 
@@ -98,18 +114,26 @@ Under assumed economics ($50/conversion, $0.01/impression — not Criteo's real 
 
 Both cost models are consistent with the same measured decile effects; nothing about the users or the effect sizes changes between them. What changes is the denominator being billed — the fraction of eligible users who ever see an ad is ~3.6%, so "pay per eligible user" and "pay per delivered impression" are roughly 28x apart in effective cost per user. Which billing model matches how a real campaign is bought is not something this dataset can answer. The defensible claim: **the top ~10% of users captures most of the value under either cost model; whether it's worth going further is a question about ad-buying mechanics, not about the causal estimate.**
 
+![Net profit versus fraction of users targeted under two cost models, for the DR-learner and X-learner](figures/05_policy_curve.png)
+
+*Figure 5. Net profit if the top-k deciles by predicted CATE are targeted (assumed economics). When every targeted user is billed (blue), profit is close to flat after the first decile; when only delivered impressions are billed (orange), it keeps rising to 100%.*
+
 A split-sample check (cutoff chosen on one half of the eval set, profit measured on the independent other half, across 5 seeds) found the exact optimal cutoff unstable — it moved between the top 2 and top 10 deciles depending on the seed, though profit at each chosen cutoff was always within a few percent of that half's own best. An earlier development-sample result claiming a specific optimal fraction (0.7) does not hold up and is not part of this write-up's conclusion.
 
 ## 4. Results — the `exposure` vs. `treatment` comparison ("doing it wrong")
 
 | outcome | correct ATE (`treatment`) | naive ATE (`exposure`) | bias multiple |
 |---|---|---|---|
-| `visit` | 0.01081 (28.6% relative lift) | 0.37918 (~1071% relative lift) | 35.1x |
-| `conversion` | 0.00111 (55.3% relative lift) | 0.05308 (~3976% relative lift) | 47.8x |
+| `visit` | 0.01034 (27.1% relative lift) | 0.37916 (~1072% relative lift) | 36.7x |
+| `conversion` | 0.00115 (59.4% relative lift) | 0.05247 (~4008% relative lift) | 45.6x |
 
-(Figures from the 1M-row development sample — note the correct-ATE column here (0.01081/0.00111) differs slightly from the full-data ATE in Section 3 (0.01034/0.00115); both are valid intent-to-treat estimates, just on different-sized draws. The mechanism and magnitude of the exposure-bias are not sensitive to sample size, so this comparison wasn't rerun on the full data.) Conditioning on `exposure` compares the ~3.6% of eligible users the auction chose to show ads to — selected specifically because the algorithm predicted they'd convert — against everyone else. That's comparing an algorithmically-selected high-propensity slice to a general population, not two comparable groups. It is not a subtle bias: relative lift figures above ~1000% should be a red flag on their own, independent of knowing to check whether the grouping variable was randomized.
+(Full data. On the 1M-row development sample the multiples were 35.1x and 47.8x, so the magnitude is not sensitive to sample size.) Conditioning on `exposure` compares the ~3.6% of eligible users the auction chose to show ads to — selected specifically because the algorithm predicted they'd convert — against everyone else. That's comparing an algorithmically-selected high-propensity slice to a general population, not two comparable groups. It is not a subtle bias: relative lift figures above ~1000% should be a red flag on their own, independent of knowing to check whether the grouping variable was randomized.
 
 This is the sharpest illustration in the whole analysis of why the identification argument in Section 1 matters: it's a concrete, quantified demonstration of exactly the mistake randomization was designed to prevent.
+
+![Estimated effect using randomized treatment versus ad exposure, log scale](figures/06_exposure_vs_treatment.png)
+
+*Figure 6. The same outcomes analyzed two ways, on a log scale. Splitting by ad exposure instead of randomized treatment inflates the estimated effect roughly 37x for `visit` and 46x for `conversion`.*
 
 ## 5. Why these numbers might be wrong
 
